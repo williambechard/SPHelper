@@ -11,6 +11,88 @@ Note: if the script you are using is on the same site as the list, rather than f
       you can instead use _spPageContextInfo.webAbsoluteUrl
 */
 
+function SPHDeleteList_v2(ListTitle, siteURL) {
+    var deferred=$.Deferred(); 
+    var clientContext = new SP.ClientContext(siteURL);
+    var oList = clientContext.get_web().get_lists().getByTitle(ListTitle);
+
+
+    for(var i = 0; i<= 100; i++){
+        //assuming the IDs are available, else need some validation  
+        var oListItem = oList.getItemById(i);  
+        oListItem.deleteObject();
+    }
+
+    clientContext.executeQueryAsync(
+        function(){
+            deferred.resolve("Done");
+        },
+        function(sender, args){
+            deferred.reject(sender, args.get_message() + '\n' + args.get_stackTrace());
+        }
+    );
+
+    return deferred.promise();
+}
+function SPHAllLists(siteURL){
+    var deferred = $.Deferred();
+    var ctx = new SP.ClientContext(siteURL);
+    var web = ctx.get_web();
+    var lists = web.get_lists();
+    ctx.load(lists); 
+  
+    ctx.executeQueryAsync(
+      function(){deferred.resolve(lists)},
+      function(sender, args){deferred.reject(sender, args.get_message());}
+    );
+    return deferred.promise();
+  }
+ 
+function SPHAddFieldToList(listName, f, siteURL) {
+    var deferred = $.Deferred(); //create the promise
+    var clientContext = new SP.ClientContext(siteURL);
+    var oList = clientContext.get_web().get_lists().getByTitle(listName);
+    var fldCollection = oList.get_fields();
+    console.log('Attempting to add Fields to the %s List', listName);
+    // Loop through each field
+    $.each(f, function(i,v){
+        var Default = '';
+        var Choices = [];
+        var strField = '<Field ';
+        for(const property in v){
+          if(property !='Default' && property!='Choice') strField+= property + '="' + v[property] + '" '
+          else if(property=='Choice') Choices = v[property];
+          else if(property=='Default') Default = '<Default>'+ v[property] + '</Default>';
+        }
+
+        strField+='>';
+
+        //add Default (if it exists) and close out the Field tag
+        //choices?
+        if(Choices.length >0){
+            strField+='<CHOICES>';
+            Choices.map(function(c){ strField+='<CHOISE>' + c + '</CHOISE>'});
+            strField+='</CHOICES>'
+        }
+        
+        strField+=Default+'</Field>';
+        
+
+        console.log('The Field XML to add: ', strField);
+
+        var field = fldCollection.addFieldAsXml(strField, true,SP.AddFieldOptions.defaultValue);
+
+        field.update();   
+    });
+
+    clientContext.executeQueryAsync(
+          function(){deferred.resolve()},
+          function(sender, args){deferred.reject(args.get_message() + '\n' + args.get_stackTrace());}
+    );  
+    return deferred.promise(); //return the promise
+}
+ 
+
 /** Info
  * Summary. Deletes ENTIRE list using AJAX
  * Description. Deletes a list. Be careful with this!!!
@@ -30,9 +112,10 @@ function SPHDeleteList(ListTitle, siteURL){
     var deferred=$.Deferred();  
     $.ajax({
         url: fullUrl,
-        type: "DELETE",
+        type: "POST",
         headers: {
             "accept": "application/json;odata=verbose",
+            "X-Http-Method":"DELETE",
             "content-type": "application/json;odata=verbose",
             "X-RequestDigest": $("#__REQUESTDIGEST").val(),
             "IF-MATCH": "*"
@@ -46,6 +129,41 @@ function SPHDeleteList(ListTitle, siteURL){
         }  
     });
     return deferred;
+}
+
+function SPHListGUID(listName, siteURL){
+    var deferred = $.Deferred();
+    var context = new SP.ClientContext(siteURL);
+    var web = context.get_web();
+    list = web.get_lists().getByTitle(listName);
+    context.load(list, 'Id');
+    context.executeQueryAsync(
+        function(){deferred.resolve(list.get_id())},
+        function(sender, args){deferred.reject(sender, args.get_message());}
+    );
+
+    return deferred.promise();
+}
+
+function createSPList(listName, siteURL) {
+    var deferred = $.Deferred();
+    var clientContext = new SP.ClientContext(siteURL);
+    var oWebsite = clientContext.get_web();
+    
+    var listCreationInfo = new SP.ListCreationInformation();
+    listCreationInfo.set_title(listName);
+    listCreationInfo.set_templateType(SP.ListTemplateType.genericList);
+
+    var oList = oWebsite.get_lists().add(listCreationInfo);
+
+    clientContext.load(oList);
+
+    clientContext.executeQueryAsync(
+        function(){deferred.resolve(oList.get_id())},
+        function(sender, args){deferred.reject(sender, args.get_message());}
+    );
+
+    return deferred.promise();
 }
 
 /** Info
